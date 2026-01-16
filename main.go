@@ -1,34 +1,35 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"os"
+	"time"
+
+	"github.com/dresbach/project/handlers"
+	"github.com/dresbach/project/session"
+	"github.com/dresbach/project/statemachine"
+	"github.com/dresbach/project/whatsapp"
 )
 
 func main() {
-	log.Print("starting server...")
-	http.HandleFunc("/", handler)
+	// Initialize the state machine
+	sm := statemachine.NewStateMachine()
 
-	// Determine port for HTTP service.
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3000"
-		log.Printf("defaulting to port %s", port)
-	}
+	// Register all the handlers
+	handlers.RegisterHandlers(sm)
 
-	// Start HTTP server.
-	log.Printf("listening on port %s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	// Initialize the session store
+	store := session.NewStore(30 * time.Minute)
+
+	// Initialize the webhook handler
+	webhookHandler := whatsapp.NewWebhookHandler(sm, store)
+
+	// Register the webhook handler
+	http.Handle("/webhook", webhookHandler)
+
+	// Start the HTTP server
+	log.Println("Starting server on :8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func handler(w http.ResponseWriter, r *http.Request) {
-	name := os.Getenv("NAME")
-	if name == "" {
-		name = "World"
-	}
-	fmt.Fprintf(w, "Hello %s!\n", name)
 }
