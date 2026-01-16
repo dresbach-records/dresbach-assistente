@@ -9,24 +9,19 @@ import (
 
 	"github.com/dresbach/dresbach-assistente/pkg/database"
 	"github.com/dresbach/dresbach-assistente/pkg/stripe"
+	"github.com/dresbach/dresbach-assistente/pkg/whatsapp" // Importa o pacote whatsapp
 	"github.com/dresbach/dresbach-assistente/pkg/whm"
 )
 
 // State representa o estado atual de uma conversa de usuário.
 type State string
 
-// Definição dos estados da conversa
+// ... (constantes de estado permanecem as mesmas)
 const (
 	StateInitial        State = "INITIAL"
 	StateAwaitingOption State = "AWAITING_OPTION"
-
-	// Fluxo: Área do Cliente
 	StateClientLogin State = "CLIENT_LOGIN"
-
-	// Fluxo: Suporte
 	StateSupport State = "SUPPORT"
-
-	// Fluxo: Tech Ops (Contratar um serviço)
 	StateTechOpsStart                State = "TECHOPS_START"
 	StateTechOpsLgpdConfirm          State = "TECHOPS_LGPD_CONFIRM"
 	StateTechOpsPainPoint            State = "TECHOPS_PAIN_POINT"
@@ -38,35 +33,33 @@ const (
 	StateTechOpsPreAnalysisSiteLink  State = "TECHOPS_PRE_ANALYSIS_SITE_LINK"
 	StateTechOpsPreAnalysisProblem   State = "TECHOPS_PRE_ANALYSIS_PROBLEM"
 	StateTechOpsClassification       State = "TECHOPS_CLASSIFICATION"
-
-	// Novos estados para o fluxo de domínio
 	StateTechOpsAskDomain        State = "TECHOPS_ASK_DOMAIN"
 	StateTechOpsCheckDomainOwner State = "TECHOPS_CHECK_DOMAIN_OWNER"
 	StateTechOpsHandleTransfer   State = "TECHOPS_HANDLE_TRANSFER"
 	StateTechOpsHandleRegister   State = "TECHOPS_HANDLE_REGISTER"
-
 	StateAwaitingPayment State = "AWAITING_PAYMENT"
-
-	// Estado final (exemplo)
 	StateFinalizing State = "FINALIZING"
 )
 
 
-// StateManager gerencia a lógica de estados da conversa, agora com persistência.
+// StateManager gerencia a lógica de estados da conversa.
 type StateManager struct {
-	dbStore      *database.MongoStore
-	whmClient    *whm.Client
-	stripeClient *stripe.Client // Adicionado o cliente Stripe
+	dbStore        *database.MongoStore
+	whmClient      *whm.Client
+	stripeClient   *stripe.Client
+	whatsappClient *whatsapp.Client // Nova dependência
 }
 
 // NewManager cria um novo StateManager com todas as dependências necessárias.
-func NewManager(dbStore *database.MongoStore, whmClient *whm.Client, stripeClient *stripe.Client) *StateManager {
+func NewManager(dbStore *database.MongoStore, whmClient *whm.Client, stripeClient *stripe.Client, whatsappClient *whatsapp.Client) *StateManager {
 	return &StateManager{
-		dbStore:      dbStore,
-		whmClient:    whmClient,
-		stripeClient: stripeClient, // Injetando o cliente Stripe
+		dbStore:        dbStore,
+		whmClient:      whmClient,
+		stripeClient:   stripeClient,
+		whatsappClient: whatsappClient, // Injeta o cliente WhatsApp
 	}
 }
+
 
 // ProcessMessage processa a mensagem e conduz a conversa com base no estado.
 func (sm *StateManager) ProcessMessage(userID, messageText string) (string, error) {
@@ -118,22 +111,18 @@ func (sm *StateManager) ProcessMessage(userID, messageText string) (string, erro
 	return response, nil
 }
 
-// ProvisionAccount é a função que será chamada pelo webhook da Stripe
+// ProvisionAccount é a função que será chamada pelo webhook da Stripe.
 func (sm *StateManager) ProvisionAccount(userID, domain, contactEmail string) error {
-	// 1. Gera uma senha aleatória para a nova conta
-	// (Em um cenário real, use uma biblioteca para gerar senhas seguras)
 	password := "senhaSuperSegura123!"
 
-	// 2. Define os parâmetros para a criação da conta no WHM
 	params := whm.CreateAccountParams{
-		Username:     generateUsername(domain), // Gera um nome de usuário a partir do domínio
+		Username:     generateUsername(domain),
 		Domain:       domain,
-		Plan:         "Dresbach-Start", // SUBSTITUA pelo seu nome de plano real
+		Plan:         "Dresbach-Start",
 		Password:     password,
 		ContactEmail: contactEmail,
 	}
 
-	// 3. Chama a função do cliente WHM para criar a conta
 	_, err := sm.whmClient.CreateAccount(params)
 	if err != nil {
 		log.Printf("ERRO AO PROVISIONAR CONTA: Falha ao criar conta no WHM para o usuário %s: %v", userID, err)
@@ -142,7 +131,13 @@ func (sm *StateManager) ProvisionAccount(userID, domain, contactEmail string) er
 
 	log.Printf("SUCESSO: Conta para o domínio %s (usuário %s) provisionada com sucesso!", domain, userID)
 
-	// 4. (Próximo passo) Enviar a confirmação e os dados de acesso para o usuário via WhatsApp
+	// Envia a confirmação para o cliente via WhatsApp
+	msg := fmt.Sprintf("Ótima notícia! ✅\n\nSeu pagamento foi confirmado e sua conta para o domínio `%s` foi criada com sucesso!\n\nEm breve você receberá seus dados de acesso.", domain)
+	if err := sm.whatsappClient.SendMessage(userID, msg); err != nil {
+		log.Printf("AVISO: Provisionamento bem-sucedido, mas falha ao enviar notificação de confirmação para o usuário %s: %v", userID, err)
+		// Não retorna erro aqui, pois o provisionamento principal já ocorreu.
+	}
+
 	return nil
 }
 
@@ -156,10 +151,10 @@ func generateUsername(domain string) string {
 	return username
 }
 
-
 // --- Funções auxiliares e Structs ---
 
-// UserSession é a representação da sessão usada internamente pelo StateManager.
+// ... (structs e funções auxiliares permanecem as mesmas)
+
 type UserSession struct {
 	UserID      string
 	State       State
@@ -167,14 +162,12 @@ type UserSession struct {
 	PreAnalysis PreAnalysisData
 }
 
-// PreAnalysisData é a representação interna dos dados de pré-análise.
 type PreAnalysisData struct {
 	RepoURL            string
 	SystemURL          string
 	ProblemDescription string
 }
 
-// copyToDBSession converte a UserSession do state para a Session do database.
 func copyToDBSession(session *UserSession) *database.Session {
 	return &database.Session{
 		UserID: session.UserID,
@@ -188,7 +181,6 @@ func copyToDBSession(session *UserSession) *database.Session {
 	}
 }
 
-// copyFromDBSession converte a Session do database para a UserSession do state.
 func copyFromDBSession(dbSession *database.Session) *UserSession {
 	return &UserSession{
 		UserID: dbSession.UserID,

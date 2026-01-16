@@ -36,7 +36,7 @@ func main() {
 	whatsappClient := whatsapp.NewClient(cfg.WhatsAppToken, cfg.WhatsAppBusinessAccID, cfg.WhatsAppPhoneNumberID)
 
 	// 4. Inicializa o StateManager, injetando todas as dependências
-	stateManager := state.NewManager(dbStore, whmClient, stripeClient)
+	stateManager := state.NewManager(dbStore, whmClient, stripeClient, whatsappClient)
 
 	log.Println("Iniciando o servidor Dresbach Assistente na porta 8080...")
 
@@ -46,10 +46,9 @@ func main() {
 		StateManager:   stateManager,
 	}
 
-	// Corrigido: Usa o campo 'Provisioner' que espera a interface
+	// O WebhookHandler do Stripe agora só precisa do Provisioner
 	stripeWebhookHandler := &stripe.WebhookHandler{
 		Provisioner:         stateManager, // stateManager implementa a interface AccountProvisioner
-		WhatsAppClient:      whatsappClient,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 	}
 
