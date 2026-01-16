@@ -1,13 +1,14 @@
-
 package database
 
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 // MongoStore implementa a persistência de sessão com o MongoDB.
@@ -18,14 +19,20 @@ type MongoStore struct {
 
 // NewMongoStore cria e retorna uma nova instância de MongoStore.
 func NewMongoStore(ctx context.Context, uri, dbName, collectionName string) (*MongoStore, error) {
-	clientOptions := options.Client().ApplyURI(uri)
-	client, err := mongo.Connect(ctx, clientOptions)
+	// PASSO 3 da sua recomendação: Usar um contexto com timeout e pingar o primary.
+	connectCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(connectCtx, options.Client().ApplyURI(uri))
 	if err != nil {
 		return nil, fmt.Errorf("falha ao conectar ao MongoDB: %w", err)
 	}
 
-	if err := client.Ping(ctx, nil); err != nil {
-		return nil, fmt.Errorf("falha ao pingar MongoDB: %w", err)
+	// Pinga o nó primário para verificar se a conexão foi estabelecida.
+	if err := client.Ping(connectCtx, readpref.Primary()); err != nil {
+		// É uma boa prática tentar desconectar se o ping falhar.
+		client.Disconnect(context.Background())
+		return nil, fmt.Errorf("falha ao pingar MongoDB (primary): %w", err)
 	}
 
 	collection := client.Database(dbName).Collection(collectionName)
@@ -73,19 +80,4 @@ func (s *MongoStore) SaveSession(ctx context.Context, session *Session) error {
 		return fmt.Errorf("falha ao salvar sessão no MongoDB: %w", err)
 	}
 	return nil
-}
-
-// Session representa a estrutura de dados da sessão no MongoDB.
-type Session struct {
-	UserID      string         `bson:"user_id"`
-	State       string         `bson:"state"`
-	Domain      string         `bson:"domain,omitempty"`
-	PreAnalysis PreAnalysisData `bson:"pre_analysis,omitempty"`
-}
-
-// PreAnalysisData armazena os dados coletados para análise.
-type PreAnalysisData struct {
-	RepoURL            string `bson:"repo_url,omitempty"`
-	SystemURL          string `bson:"system_url,omitempty"`
-	ProblemDescription string `bson:"problem_description,omitempty"`
 }

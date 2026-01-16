@@ -12,9 +12,17 @@ import (
 	"github.com/dresbach/dresbach-assistente/pkg/stripe"
 	"github.com/dresbach/dresbach-assistente/pkg/whatsapp"
 	"github.com/dresbach/dresbach-assistente/pkg/whm"
+
+	"github.com/joho/godotenv" // Importa a biblioteca
 )
 
 func main() {
+	// Carrega as variáveis de ambiente do arquivo .env
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Aviso: Não foi possível encontrar o arquivo .env, as variáveis de ambiente devem ser setadas manualmente.")
+	}
+
 	ctx := context.Background()
 
 	// 1. Carrega as configurações de ambiente
