@@ -14,19 +14,18 @@ import (
 )
 
 // AccountProvisioner define a interface para provisionar uma conta após o pagamento.
-// Isso quebra a dependência cíclica, permitindo que o state.Manager implemente esta interface.
 type AccountProvisioner interface {
 	ProvisionAccount(userID, domain, contactEmail string) error
 }
 
 // WebhookHandler lida com os webhooks da Stripe.
 type WebhookHandler struct {
-	Provisioner         AccountProvisioner // Depende da interface, não do tipo concreto
+	Provisioner         AccountProvisioner
 	WhatsAppClient      *whatsapp.Client
 	StripeWebhookSecret string
 }
 
-// HandleWebhook processa os eventos de webhook da Stripe.
+// ServeHTTP processa os eventos de webhook da Stripe.
 func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	const MaxBodyBytes = int64(65536)
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
@@ -37,15 +36,13 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Valida a assinatura do webhook para garantir que veio da Stripe
 	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), h.StripeWebhookSecret)
 	if err != nil {
 		log.Printf("ERRO: Falha na verificação da assinatura do webhook da Stripe: %v", err)
-		w.WriteHeader(http.StatusBadRequest) // Assinatura inválida é um Bad Request
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	// Processa apenas o evento de checkout bem-sucedido
 	if event.Type == "checkout.session.completed" {
 		var session stripe.CheckoutSession
 		if err := json.Unmarshal(event.Data.Raw, &session); err != nil {
@@ -54,26 +51,32 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Extrai os metadados que associamos
-		userID, ok := session.Metadata["user_id"]
-		if !ok {
-			log.Printf("ERRO: 'user_id' não encontrado nos metadados do webhook da Stripe.")
-			w.WriteHeader(http.StatusOK) // Retorna 200 para a Stripe não reenviar
+		// Verifica se o objeto PaymentIntent foi expandido e incluído.
+		if session.PaymentIntent == nil {
+			log.Printf("ERRO CRÍTICO: O objeto PaymentIntent não foi encontrado no webhook da Stripe. Certifique-se de expandi-lo com 'payment_intent' na criação da sessão.")
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		domain, _ := session.Metadata["domain"]
+
+		// Extrai os metadados do PaymentIntent, não da sessão.
+		metadata := session.PaymentIntent.Metadata
+		userID, ok := metadata["user_id"]
+		if !ok {
+			log.Printf("ERRO: 'user_id' não encontrado nos metadados do PaymentIntent do webhook da Stripe.")
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		domain, _ := metadata["domain"]
 		contactEmail := session.CustomerEmail
 
 		log.Printf("PAGAMENTO BEM-SUCEDIDO recebido para o usuário: %s, domínio: %s", userID, domain)
 
-		// Chama a função de provisionamento através da interface
 		if err := h.Provisioner.ProvisionAccount(userID, domain, contactEmail); err != nil {
 			log.Printf("ERRO CRÍTICO: O pagamento foi recebido, mas o provisionamento FALHOU para o usuário %s: %v", userID, err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
-		// Envia a confirmação para o cliente via WhatsApp
 		msg := fmt.Sprintf("Ótima notícia! ✅\n\nSeu pagamento foi confirmado e sua conta para o domínio `%s` foi criada com sucesso!\n\nEm breve você receberá seus dados de acesso.", domain)
 		if err := h.WhatsAppClient.SendMessage(userID, msg); err != nil {
 			log.Printf("ERRO: Falha ao enviar mensagem de confirmação de provisionamento para o usuário %s: %v", userID, err)

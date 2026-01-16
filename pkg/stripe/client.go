@@ -20,16 +20,10 @@ func NewClient(secretKey string) *Client {
 }
 
 // CreateCheckoutSession cria uma sessão de checkout na Stripe e retorna a URL.
-// Associei o `userID` aos metadados para saber quem pagou no webhook.
 func (c *Client) CreateCheckoutSession(userID, domain string) (string, error) {
-	// O ID do produto no seu catálogo Stripe (ex: um plano de hospedagem)
-	// Você precisa criar este produto no seu Dashboard da Stripe primeiro.
-	// Exemplo: "price_1P8cysRxx94s4qFjJbAQS5nJ"
 	priceID := "price_1P8cysRxx94s4qFjJbAQS5nJ" // SUBSTITUA PELO SEU PRICE ID REAL
-
-	// Domínio do seu site para redirecionamento
 	successURL := "https://dresbachhosting.com.br/sucesso" // SUBSTITUA PELA SUA URL DE SUCESSO
-	cancelURL := "https://dresbachhosting.com.br/cancelamento" // SUBSTITUA PELA SUA URL DE CANCELAMENTO
+	cancelURL := "https://dresbachhosting.com.br/cancelamento"  // SUBSTITUA PELA SUA URL DE CANCELAMENTO
 
 	params := &stripe.CheckoutSessionParams{
 		PaymentMethodTypes: stripe.StringSlice([]string{
@@ -45,12 +39,19 @@ func (c *Client) CreateCheckoutSession(userID, domain string) (string, error) {
 		Mode:       stripe.String(string(stripe.CheckoutSessionModePayment)),
 		SuccessURL: stripe.String(successURL),
 		CancelURL:  stripe.String(cancelURL),
-		// Adiciona o userID aos metadados da sessão de checkout
-		Metadata: map[string]string{
-			"user_id": userID,
-			"domain": domain, // Adiciona o domínio para referência
+		// Anexa os metadados ao PaymentIntent, que é o objeto de pagamento subjacente.
+		// Isso resolve o erro de compilação "unknown field Metadata".
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
+			Metadata: map[string]string{
+				"user_id": userID,
+				"domain":  domain,
+			},
 		},
 	}
+
+	// Expande o objeto PaymentIntent no retorno da sessão para que o webhook
+	// não precise fazer uma chamada extra à API para obter os metadados.
+	params.AddExpand("payment_intent")
 
 	s, err := session.New(params)
 	if err != nil {
