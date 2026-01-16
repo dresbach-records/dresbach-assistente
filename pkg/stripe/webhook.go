@@ -8,16 +8,21 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dresbach/dresbach-assistente/pkg/state"
 	"github.com/dresbach/dresbach-assistente/pkg/whatsapp"
 	"github.com/stripe/stripe-go/v72"
 	"github.com/stripe/stripe-go/v72/webhook"
 )
 
+// AccountProvisioner define a interface para provisionar uma conta após o pagamento.
+// Isso quebra a dependência cíclica, permitindo que o state.Manager implemente esta interface.
+type AccountProvisioner interface {
+	ProvisionAccount(userID, domain, contactEmail string) error
+}
+
 // WebhookHandler lida com os webhooks da Stripe.
 type WebhookHandler struct {
-	StateManager      *state.StateManager
-	WhatsAppClient    *whatsapp.Client
+	Provisioner         AccountProvisioner // Depende da interface, não do tipo concreto
+	WhatsAppClient      *whatsapp.Client
 	StripeWebhookSecret string
 }
 
@@ -36,7 +41,7 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	event, err := webhook.ConstructEvent(payload, r.Header.Get("Stripe-Signature"), h.StripeWebhookSecret)
 	if err != nil {
 		log.Printf("ERRO: Falha na verificação da assinatura do webhook da Stripe: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest) // Assinatura inválida é um Bad Request
 		return
 	}
 
@@ -53,25 +58,23 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.Metadata["user_id"]
 		if !ok {
 			log.Printf("ERRO: 'user_id' não encontrado nos metadados do webhook da Stripe.")
-			// Retorna 200 para a Stripe não reenviar, pois não há como corrigir.
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusOK) // Retorna 200 para a Stripe não reenviar
 			return
 		}
 		domain, _ := session.Metadata["domain"]
-		contactEmail := session.CustomerEmail // Captura o email do cliente
+		contactEmail := session.CustomerEmail
 
 		log.Printf("PAGAMENTO BEM-SUCEDIDO recebido para o usuário: %s, domínio: %s", userID, domain)
 
-		// Chama a função de provisionamento
-		if err := h.StateManager.ProvisionAccount(userID, domain, contactEmail); err != nil {
+		// Chama a função de provisionamento através da interface
+		if err := h.Provisioner.ProvisionAccount(userID, domain, contactEmail); err != nil {
 			log.Printf("ERRO CRÍTICO: O pagamento foi recebido, mas o provisionamento FALHOU para o usuário %s: %v", userID, err)
-			// (Opcional) Enviar uma notificação para a equipe interna sobre a falha.
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		// Envia a confirmação para o cliente via WhatsApp
-		msg := fmt.Sprintf("Ótima notícia! ✅\n\nSeu pagamento foi confirmado e sua conta para o domínio `%s` foi criada com sucesso!\n\nEm breve você receberá seus dados de acesso.\n(Lógica de envio de senha a ser implementada)", domain)
+		msg := fmt.Sprintf("Ótima notícia! ✅\n\nSeu pagamento foi confirmado e sua conta para o domínio `%s` foi criada com sucesso!\n\nEm breve você receberá seus dados de acesso.", domain)
 		if err := h.WhatsAppClient.SendMessage(userID, msg); err != nil {
 			log.Printf("ERRO: Falha ao enviar mensagem de confirmação de provisionamento para o usuário %s: %v", userID, err)
 		}

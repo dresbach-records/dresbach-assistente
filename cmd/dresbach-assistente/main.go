@@ -46,9 +46,10 @@ func main() {
 		StateManager:   stateManager,
 	}
 
+	// Corrigido: Usa o campo 'Provisioner' que espera a interface
 	stripeWebhookHandler := &stripe.WebhookHandler{
-		StateManager:      stateManager,
-		WhatsAppClient:    whatsappClient,
+		Provisioner:         stateManager, // stateManager implementa a interface AccountProvisioner
+		WhatsAppClient:      whatsappClient,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 	}
 
