@@ -1,32 +1,3 @@
- licença 
----
-
-## 🔐 Regras de Negócio Fundamentais
-
-- Nunca informar preço de projeto sem diagnóstico
-- Diagnóstico Tech Ops é sempre pago
-- Apenas uma pergunta por mensagem
-- Linguagem humana, profissional e clara
-- Fluxos Tech Ops e Área do Cliente são totalmente independentes
-- Pagamentos ocorrem apenas no fluxo Tech Ops
-
----
-
-## ⚙️ Stack Tecnológica
-
-- Go (Golang)
-- WhatsApp Cloud API (Meta)
-- Webhooks HTTP
-- Integração com:
-  - Gateways de pagamento
-  - Agenda (calendário)
-  - WHM / cPanel
-  - Sistemas internos
-
----
-
-## 📁 Estrutura do Projeto (sugerida)
-
 # Dresbach Assistente
 
 Assistente oficial da **Dresbach Hosting do Brasil LTDA**, desenvolvido em **Go**, operando via **WhatsApp Cloud API**, com fluxos inteligentes de atendimento, Tech Ops (consultoria especializada) e Área do Cliente de Hospedagem.
@@ -83,3 +54,31 @@ Qualificação → Diagnóstico pago → Pagamento → Agendamento → Humano
 - Comunicação: **Webhooks (WhatsApp Cloud API)**
 - Backend: **Stateless**
 - Integrações externas desacopladas
+
+---
+
+## 🔐 Regras de Negócio Fundamentais
+
+- Nunca informar preço de projeto sem diagnóstico
+- Diagnóstico Tech Ops é sempre pago
+- Apenas uma pergunta por mensagem
+- Linguagem humana, profissional e clara
+- Fluxos Tech Ops e Área do Cliente são totalmente independentes
+- Pagamentos ocorrem apenas no fluxo Tech Ops
+
+---
+
+## ⚙️ Stack Tecnológica
+
+- Go (Golang)
+- WhatsApp Cloud API (Meta)
+- Webhooks HTTP
+- Integração com:
+  - Gateways de pagamento
+  - Agenda (calendário)
+  - WHM / cPanel
+  - Sistemas internos
+
+---
+
+## 📁 Estrutura do Projeto (sugerida)
