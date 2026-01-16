@@ -7,13 +7,19 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/dresbach/dresbach-assistente/pkg/state"
+	// "github.com/dresbach/dresbach-assistente/pkg/state" // Removido para quebrar o ciclo
 )
+
+// MessageProcessor define a interface para processar uma mensagem.
+// Qualquer struct que implemente este método pode ser usado pelo WebhookHandler.
+type MessageProcessor interface {
+	ProcessMessage(userID, messageText string) (string, error)
+}
 
 // WebhookHandler processa as requisições do webhook do WhatsApp.
 type WebhookHandler struct {
 	WhatsAppClient *Client
-	StateManager   *state.StateManager
+	StateManager   MessageProcessor // Agora depende da interface, não da implementação concreta
 }
 
 // ServeHTTP lida com as requisições HTTP para o webhook.
@@ -39,14 +45,14 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Processa a mensagem usando o StateManager, que agora detém toda a lógica de negócios.
+	// Processa a mensagem usando a interface, sem conhecer a implementação.
 	responseText, err := h.StateManager.ProcessMessage(senderPhone, messageText)
 	if err != nil {
 		log.Printf("Erro ao processar a mensagem pelo StateManager: %v", err)
 		responseText = "Desculpe, ocorreu um erro ao processar sua solicitação. Tente novamente."
 	}
 
-	// Envia a resposta (gerada pelo StateManager) de volta ao usuário.
+	// Envia a resposta de volta ao usuário.
 	if err := h.WhatsAppClient.SendMessage(senderPhone, responseText); err != nil {
 		log.Printf("Erro ao enviar resposta do WhatsApp: %v", err)
 	}

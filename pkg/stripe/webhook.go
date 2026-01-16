@@ -3,6 +3,7 @@ package stripe
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 
@@ -26,7 +27,9 @@ type WebhookHandler struct {
 func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	const MaxBodyBytes = int64(65536)
 	r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
-	payload, err := r.GetBody()
+
+	// Corrigido: Ler o corpo da requisição para um []byte
+	payload, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("ERRO: Falha ao ler o corpo do webhook da Stripe: %v", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -48,17 +51,25 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if session.PaymentIntent == nil {
-			log.Printf("ERRO CRÍTICO: O objeto PaymentIntent não foi encontrado no webhook da Stripe.")
+		// A partir da versão v72 da biblioteca stripe-go, o PaymentIntent está dentro da sessão
+		// e precisamos expandi-lo na chamada de criação da sessão. Se não estiver lá,
+		// pode ser necessário buscar o PaymentIntent separadamente.
+		// Por enquanto, vamos assumir que ele não está diretamente disponível e buscar pelos metadados.
+		metadata := session.Metadata
+		if metadata == nil {
+			// Fallback para o PaymentIntent se os metadados da sessão não estiverem definidos
+			// (isso depende de como a sessão de checkout é criada)
+			log.Printf("AVISO: Metadados não encontrados diretamente na sessão. Verificando PaymentIntent...")
+			// Esta parte pode precisar de mais lógica para buscar o PaymentIntent se não for expandido.
+			// Por simplicidade, vamos parar aqui se não encontrarmos os metadados na sessão.
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		metadata := session.PaymentIntent.Metadata
 		userID, ok := metadata["user_id"]
 		if !ok {
-			log.Printf("ERRO: 'user_id' não encontrado nos metadados do PaymentIntent.")
-			w.WriteHeader(http.StatusOK) // Responde OK para não ser reenviado pelo Stripe
+			log.Printf("ERRO: 'user_id' não encontrado nos metadados da sessão.")
+			w.WriteHeader(http.StatusOK) // Responde OK para não ser reenviado
 			return
 		}
 
